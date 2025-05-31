@@ -16,6 +16,7 @@ contract Main {
     error Main__InvoiceTokenNotFound();
     error Main__InvoiceMustBeApproved();
     error Main__TokensBuyingFails();
+    error Main__RoleAlereadyChosen();
 
     enum UserRole {
         Supplier,
@@ -45,6 +46,7 @@ contract Main {
     mapping(uint256 id => bool) public IdAlreadyExists;
     mapping(address user => UserRole role) public userRole;
     mapping(uint256 id => address token) public invoiceToken;
+    mapping(address => bool) public hasChosenRole;
 
     event ContractFunded(address indexed sender, uint256 amount);
     event InvoiceCreated(
@@ -73,7 +75,9 @@ contract Main {
     }
 
     function chooseRole(UserRole _role) external {
+        if (hasChosenRole[msg.sender]) revert Main__RoleAlereadyChosen();
         userRole[msg.sender] = _role;
+        hasChosenRole[msg.sender] = true;
     }
 
     function createInvoice(uint256 _id, address _buyer, uint256 _amount, uint256 _dueDate)

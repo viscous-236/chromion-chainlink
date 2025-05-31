@@ -15,6 +15,7 @@ contract InvoiceToken is ERC20, Ownable, ReentrancyGuard {
 
     uint256 public constant DISCOUNT_RATE = 5;
     uint256 public tokenSupply;
+    uint256 public totalSoldTokens;
     uint256 public constant ONE_DOLLAR = 1e18;
     address public supplier;
     AggregatorV3Interface internal priceFeed;
@@ -53,6 +54,7 @@ contract InvoiceToken is ERC20, Ownable, ReentrancyGuard {
 
     function buyTokens(uint256 _amount) external payable MoreThanZero(_amount) nonReentrant returns (bool) {
         uint256 totalCost = getExactCost(_amount);
+        if (_amount + totalSoldTokens > tokenSupply) revert InvoiceToken__NotEnoughTokens();
 
         if (balanceOf(supplier) < _amount) {
             revert InvoiceToken__NotEnoughTokens();
@@ -65,6 +67,11 @@ contract InvoiceToken is ERC20, Ownable, ReentrancyGuard {
         if (!success) {
             revert InvoiceToken__PaymentToSupplierFails();
         }
+
+        if (msg.value > totalCost) {
+            payable(msg.sender).transfer(msg.value - totalCost);
+        }
+
         return success;
     }
 }
