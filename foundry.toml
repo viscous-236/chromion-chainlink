@@ -6,5 +6,5 @@ remappings = [
     "forge-std=lib/forge-std/src",
     "openzeppelin-contracts=lib/openzeppelin-contracts/contracts",
     "chainlink-brownie-contracts=lib/chainlink-brownie-contracts/contracts",
-    "@chainlink/contracts=lib/chainlink-brownie-contracts/contracts"
+    "@chainlink/contracts=lib/chainlink/contracts"
 ]

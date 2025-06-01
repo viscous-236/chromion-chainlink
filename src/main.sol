@@ -4,13 +4,23 @@ pragma solidity ^0.8.18;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_3_0/FunctionsClient.sol";
+import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/v1_3_0/FunctionsClient.sol";
 import {InvoiceToken} from "./InvoiceToken.sol";
-import "./chainlink/ConfirmedOwner.sol";
-import "src/chainlink/FunctionsClient.sol";
 
+abstract contract Main is FunctionsClient {
+ using FunctionsRequest for FunctionsRequest.Request;
 
+      uint64 private s_subscriptionId;
+      bytes32 private s_donId;
+      uint32 private s_gasLimit = 300000;
 
-contract Main {
+      constructor(address router ,uint64 subscriptionId,bytes32 donId) FunctionsClient(router){
+          s_subscriptionId = subscriptionId;
+          s_donId = donId;        
+      }
+      
+
     error Main__MoreThanZero();
     error Main__MustBeValidAddress();
     error Main__MustBeUnique();
@@ -30,6 +40,7 @@ contract Main {
 
     enum InvoiceStatus {
         Pending,
+        VerificationInProgress,
         Approved,
         Rejected
     }
@@ -51,11 +62,15 @@ contract Main {
     mapping(address user => UserRole role) public userRole;
     mapping(uint256 id => address token) public invoiceToken;
     mapping(address => bool) public hasChosenRole;
+    mapping(bytes32 => uint256) public pendingRequests;
+     
 
     event ContractFunded(address indexed sender, uint256 amount);
     event InvoiceCreated(
         uint256 indexed id, address indexed supplier, address indexed buyer, uint256 amount, uint256 dueDate
     );
+    event InvoiceVerificationRequested(uint256,bytes32);
+    event InvoiceVerified(uint256,bool);
 
     modifier MoreThanZero(uint256 _number) {
         if (_number <= 0) {
@@ -109,11 +124,86 @@ contract Main {
             status: InvoiceStatus.Pending,
             dueDate: _dueDate
         });
-        // Use Chianlink function to verify that it is a valid invoice
-        generateErc20(_id, _amount);
+
         emit InvoiceCreated(_id, msg.sender, _buyer, _amount, _dueDate);
     }
 
+    function verifyInvoice(uint256 invoiceId, uint256 amount) external{
+          require(msg.sender==invoices[invoiceId].supplier,"Not allowed");
+
+          require(invoices[invoiceId].status == InvoiceStatus.Pending, "Already verified or in progress");
+          invoices[invoiceId].status = InvoiceStatus.VerificationInProgress;
+          string memory source = 
+          "const invoiceId = args[0];"
+          "const amount = args[1];"
+          ""
+
+          "const apiResponse = await Functions.makeHttpRequest({"
+          "url: //my api ,"
+          "method:'POST',"
+          "headers:{"
+          "'Authorization': `Bearer ${secrets.apiKey}`,"
+          "'Content-Type': 'application/json'"
+          "},"
+          "  data: {"                            
+          "  invoiceId: invoiceId,"
+          "  amount: amount"
+          "}"
+        "});"
+        ""
+
+        "if(apiResponse.error){"
+        " throw Error('ERP API failed');"    
+        "}"
+        ""
+
+        "const isValid = apiResponse.data.isValid;"
+        "return Functions.encodeUint256(isValid? 1: 0);";
+
+        FunctionsRequest.Request memory req;
+        req.initializeRequestForInlineJavaScript(source);
+
+        string[] memory args = new string[](2);
+        args[0]=uint2str(invoiceId);
+        args[1]=uint2str(amount);
+        req.setArgs(args);
+
+        bytes32 requestId = _sendRequest(
+            req.encodeCBOR(),
+            s_subscriptionId,
+            s_gasLimit,
+            s_donId
+        );
+        
+        pendingRequests[requestId]=invoiceId;
+        emit InvoiceVerificationRequested(invoiceId, requestId);
+
+    }
+    
+    function _fulfillRequest(bytes32 requestId,bytes memory response, bytes memory error)internal override{
+            uint256 invoiceId = pendingRequests[requestId];
+            require(invoiceId != 0, "Request not found");
+            
+            if(error.length>0){
+                  invoices[invoiceId].status=InvoiceStatus.Rejected;
+                  emit InvoiceVerified(invoiceId,false); 
+            }
+            else{
+                uint256 result = abi.decode(response,(uint256));
+                if(result==1){
+                  invoices[invoiceId].status=InvoiceStatus.Approved;
+                  generateErc20(invoices[invoiceId].id,invoices[invoiceId].amount);
+                  emit InvoiceVerified(invoiceId,true);
+                }
+                else{
+                  invoices[invoiceId].status=InvoiceStatus.Rejected;
+                  emit InvoiceVerified(invoiceId,false); 
+                }
+            }
+            delete pendingRequests[requestId];
+    }
+
+    
     function buyTokens(uint256 _id, uint256 _amount) external payable {
         if (invoiceToken[_id] == address(0)) {
             revert Main__InvoiceTokenNotFound();
@@ -136,6 +226,7 @@ contract Main {
             revert Main__TokensBuyingFails();
         }
     }
+    
 
     /*//////////////////////////////////////////////////////////////
                        INTERNAL_PRIVATE_FUNCTIONS
@@ -174,4 +265,6 @@ contract Main {
         }
         return string(bstr);
     }
+
+   
 }
