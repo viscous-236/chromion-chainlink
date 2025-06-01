@@ -5,7 +5,8 @@ pragma solidity ^0.8.18;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from "chainlink-brownie-contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+
 
 contract InvoiceToken is ERC20, Ownable, ReentrancyGuard {
     error InvoiceToken__MoreThanZero();

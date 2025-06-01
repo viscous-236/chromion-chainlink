@@ -5,6 +5,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {InvoiceToken} from "./InvoiceToken.sol";
+import "./chainlink/ConfirmedOwner.sol";
+import "src/chainlink/FunctionsClient.sol";
+
+
 
 contract Main {
     error Main__MoreThanZero();
