@@ -3,76 +3,80 @@
 pragma solidity ^0.8.18;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {AggregatorV3Interface} from "chainlink-brownie-contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
 
-contract InvoiceToken is ERC20, Ownable, ReentrancyGuard {
-    error InvoiceToken__MoreThanZero();
-    error InvoiceToken__NotEnoughTokens();
-    error InvoiceToken__NotEnoughEthToBuy();
-    error InvoiceToken__PaymentToSupplierFails();
-
-    uint256 public constant DISCOUNT_RATE = 5;
-    uint256 public tokenSupply;
-    uint256 public totalSoldTokens;
-    uint256 public constant ONE_DOLLAR = 1e18;
-    address public supplier;
-    AggregatorV3Interface internal priceFeed;
-
-    modifier MoreThanZero(uint256 _number) {
-        if (_number <= 0) {
-            revert InvoiceToken__MoreThanZero();
-        }
-        _;
-    }
-
-    constructor(string memory _name, string memory _symbol, uint256 _amount, address _supplier)
-        ERC20(_name, _symbol)
-        Ownable(_supplier)
-        MoreThanZero(_amount)
-    {
+contract InvoiceToken is ERC20 {
+    uint256 public constant DISCOUNT_RATE = 5; 
+    uint256 public immutable maxSupply; 
+    address public immutable supplier;
+    address public immutable mainContract;
+    AggregatorV3Interface internal immutable priceFeed;
+    
+   
+    uint256 public totalPaidToSupplier;
+    
+    constructor(
+        string memory _name, 
+        string memory _symbol, 
+        uint256 _invoiceAmountUSD, 
+        address _supplierAddress,  
+        address _mainContractAddress  
+    ) ERC20(_name, _symbol) {
         priceFeed = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);
-        supplier = _supplier;
-        tokenSupply = _amount - (_amount * DISCOUNT_RATE / 100);
-        _mint(_supplier, tokenSupply);
+        supplier = _supplierAddress;  
+        mainContract = _mainContractAddress;  
+        
+        
+        maxSupply = _invoiceAmountUSD - (_invoiceAmountUSD * DISCOUNT_RATE / 100);
     }
-
-    function getLatestPrice() public view returns (uint256) {
-        (, int256 answer,,,) = priceFeed.latestRoundData();
-        return uint256(answer * 1e10);
+    
+    
+    function getETHPrice() public view returns (uint256) {
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        require(price > 0, "Invalid price from oracle");
+        return uint256(price) * 1e10;
     }
-
-    function getTokenPrice() public view returns (uint256) {
-        uint256 oneETHPriceUSD = getLatestPrice();
-        return (ONE_DOLLAR * 1e18) / oneETHPriceUSD;
+    
+    
+    function getExactCost(uint256 _amount) public view returns (uint256) {
+        require(_amount > 0, "Amount must be > 0");
+        return (_amount * 1e18) / getETHPrice();
     }
-
-    function getExactCost(uint256 _amount) public view MoreThanZero(_amount) returns (uint256) {
-        return getTokenPrice() * _amount;
+    
+    
+    function buyTokens(uint256 _amount, address _investor) external payable returns (bool) {
+        require(msg.sender == mainContract, "Only main contract can call");
+        require(_amount > 0, "Amount must be > 0");
+        require(_investor != address(0), "Invalid investor address");
+        require(totalSupply() + _amount <= maxSupply, "Exceeds max supply");
+        
+        uint256 cost = getExactCost(_amount);
+        require(msg.value >= cost, "Insufficient ETH");
+        
+        _mint(_investor, _amount);
+        
+    
+        (bool success,) = payable(supplier).call{value: cost}("");
+        require(success, "Payment to supplier failed");
+       
+        totalPaidToSupplier += cost;
+        
+        if (msg.value > cost) {
+            (bool refundSuccess,) = payable(_investor).call{value: msg.value - cost}("");
+            require(refundSuccess, "Refund failed");
+        }
+        
+        return true;
     }
-
-    function buyTokens(uint256 _amount) external payable MoreThanZero(_amount) nonReentrant returns (bool) {
-        uint256 totalCost = getExactCost(_amount);
-        if (_amount + totalSoldTokens > tokenSupply) revert InvoiceToken__NotEnoughTokens();
-
-        if (balanceOf(supplier) < _amount) {
-            revert InvoiceToken__NotEnoughTokens();
-        }
-        if (msg.value < totalCost) {
-            revert InvoiceToken__NotEnoughEthToBuy();
-        }
-        _transfer(supplier, msg.sender, _amount);
-        (bool success,) = payable(supplier).call{value: totalCost}("");
-        if (!success) {
-            revert InvoiceToken__PaymentToSupplierFails();
-        }
-
-        if (msg.value > totalCost) {
-            payable(msg.sender).transfer(msg.value - totalCost);
-        }
-
-        return success;
+    
+    
+    function remainingCapacity() external view returns (uint256) {
+        return maxSupply - totalSupply();
+    }
+    
+    
+    function getOriginalInvoiceAmount() external view returns (uint256) {
+        return (maxSupply * 100) / (100 - DISCOUNT_RATE);
     }
 }

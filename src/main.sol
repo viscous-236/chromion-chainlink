@@ -8,7 +8,7 @@ import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_3_0/Fu
 import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/v1_3_0/FunctionsClient.sol";
 import {InvoiceToken} from "./InvoiceToken.sol";
 
-abstract contract Main is FunctionsClient {
+contract Main is FunctionsClient {
  using FunctionsRequest for FunctionsRequest.Request;
 
       uint64 private s_subscriptionId;
@@ -63,6 +63,9 @@ abstract contract Main is FunctionsClient {
     mapping(uint256 id => address token) public invoiceToken;
     mapping(address => bool) public hasChosenRole;
     mapping(bytes32 => uint256) public pendingRequests;
+    mapping(address buyer => uint256[] invoiceIds) public buyerInvoices;
+    mapping(address buyer => uint256 count) public buyerInvoiceCount;
+
      
 
     event ContractFunded(address indexed sender, uint256 amount);
@@ -124,10 +127,13 @@ abstract contract Main is FunctionsClient {
             status: InvoiceStatus.Pending,
             dueDate: _dueDate
         });
+        buyerInvoices[_buyer].push(_id);
+        buyerInvoiceCount[_buyer]++;
 
         emit InvoiceCreated(_id, msg.sender, _buyer, _amount, _dueDate);
     }
 
+    //// First step for verifying invoice 
     function verifyInvoice(uint256 invoiceId, uint256 amount) external{
           require(msg.sender==invoices[invoiceId].supplier,"Not allowed");
 
@@ -180,6 +186,7 @@ abstract contract Main is FunctionsClient {
 
     }
     
+    //// Verification result function
     function _fulfillRequest(bytes32 requestId,bytes memory response, bytes memory error)internal override{
             uint256 invoiceId = pendingRequests[requestId];
             require(invoiceId != 0, "Request not found");
@@ -205,44 +212,51 @@ abstract contract Main is FunctionsClient {
 
     
     function buyTokens(uint256 _id, uint256 _amount) external payable {
-        if (invoiceToken[_id] == address(0)) {
-            revert Main__InvoiceTokenNotFound();
-        }
-        if (userRole[msg.sender] != UserRole.Investor) {
-            revert Main__CallerMustBeInvestor();
-        }
-        if (IdAlreadyExists[_id] == false) {
-            revert Main__InvoiceTokenNotFound();
-        }
-        if (invoices[_id].status != InvoiceStatus.Approved) {
-            revert Main__InvoiceMustBeApproved();
-        }
+        require(invoiceToken[_id] != address(0), "Invoice token not found");
+        require(userRole[msg.sender] == UserRole.Investor, "Must be investor");
+        require(IdAlreadyExists[_id], "Invoice doesn't exist");
+        require(invoices[_id].status == InvoiceStatus.Approved, "Invoice not approved");
         amountOfTokensPurchasedByInvestor[_id][msg.sender] += _amount;
-        invoices[_id].investors.push(msg.sender);
-        InvoiceToken token = InvoiceToken(invoiceToken[_id]);
-        uint256 totalCost = token.getExactCost(_amount);
-        bool success = token.buyTokens{value: totalCost}(_amount);
-        if (!success) {
-            revert Main__TokensBuyingFails();
+        if (amountOfTokensPurchasedByInvestor[_id][msg.sender] == _amount) {
+            invoices[_id].investors.push(msg.sender);
         }
+        InvoiceToken token = InvoiceToken(invoiceToken[_id]);
+        bool success = token.buyTokens{value: msg.value}(_amount, msg.sender);
+        require(success, "Token buying failed");
     }
-    
 
+
+    
+    function PaymentofBuyer(uint256 _id, uint256 amount) external payable{
+        require(userRole[msg.sender] == UserRole.Buyer, "Only buyer allowed to pay");
+        require(investors[_id].buyer==msg.sender,"Specific buyer can only pay");
+        require(investors[_id].status=InvoiceStatus.Approved,"Invoice not approved");
+
+
+
+
+    }
     /*//////////////////////////////////////////////////////////////
                        INTERNAL_PRIVATE_FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function generateErc20(uint256 _id, uint256 _amount) internal MoreThanZero(_id) MoreThanZero(_amount) {
-        if (invoices[_id].status != InvoiceStatus.Approved) {
-            revert Main__InvoiceMustBeApproved();
-        }
+   function generateErc20(uint256 _id, uint256 _amount) internal {
+        require(invoices[_id].status == InvoiceStatus.Approved, "Invoice not approved");
+        
         string memory name = string(abi.encodePacked("InvoiceToken_", uint2str(_id)));
         string memory symbol = string(abi.encodePacked("IT_", uint2str(_id)));
 
-        InvoiceToken newInvoiceToken = new InvoiceToken(name, symbol, _amount, invoices[_id].supplier);
-        address tokenAddress = address(newInvoiceToken);
-        invoiceToken[_id] = tokenAddress;
+        InvoiceToken newInvoiceToken = new InvoiceToken(
+            name, 
+            symbol, 
+            _amount, 
+            invoices[_id].supplier,
+            address(this)  
+        );
+        
+        invoiceToken[_id] = address(newInvoiceToken);
     }
+
 
     function uint2str(uint256 _i) internal pure returns (string memory) {
         if (_i == 0) {
@@ -266,5 +280,24 @@ abstract contract Main is FunctionsClient {
         return string(bstr);
     }
 
-   
+    /*//////////////////////////////////////////////////////////////
+                       HELPER_FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function getBuyerInvoiceIds(address _buyer) external view returns (uint256[] memory) {
+    return buyerInvoices[_buyer];
+    }
+
+    function getBuyerInvoiceCount(address _buyer) external view returns (uint256) {
+    return buyerInvoiceCount[_buyer];
+    }
+
+    function getInvoice(uint256 _invoiceId) external view returns (Invoice memory) {
+    return invoices[_invoiceId];
+    }
+
+    function getInvoiceStatus(uint256 _invoiceId) external view returns (InvoiceStatus) {
+    return invoices[_invoiceId].status;
+    }
+
 }
