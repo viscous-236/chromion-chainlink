@@ -32,6 +32,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     error Main__PaymentDistributionFailed();
     error Main__OnlyAuthorizedUpkeepers();
     error Main__OnlyOwner();
+    error Main__ErrorInBurningTokens();
 
     uint64 private s_subscriptionId;
     bytes32 private s_donId;
@@ -104,6 +105,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     event InvoiceTokenCreated(uint256 indexed invoiceId, address indexed tokenAddress);
     event UpkeeperAuthorized(address indexed upkeeper);
     event UpkeeperRevoked(address indexed upkeeper);
+    event AllTokensBurned(uint256 indexed invoiceId, address[] investors);
 
     modifier MoreThanZero(uint256 _number) {
         if (_number <= 0) {
@@ -326,6 +328,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
             uint256 distributionId = distributionIds[i];
             if (!pendingDistributions[distributionId].processed) {
                 _processPaymentDistribution(distributionId);
+                _burnToken(distributionId);
 
                 if (distributionId == nextDistributionToProcess) {
                     _updateNextDistributionPointer();
@@ -380,6 +383,26 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
 
         distribution.processed = true;
         totalPendingDistributions--;
+    }
+
+    function _burnToken(uint256 distributionId) internal {
+        uint256 inovideId = pendingDistributions[distributionId].invoiceId;
+        Invoice storage invoice = invoices[inovideId];
+
+        if (invoice.investors.length > 0) {
+            address tokenAddress = invoiceToken[inovideId];
+            if (tokenAddress != address(0)) {
+                InvoiceToken token = InvoiceToken(tokenAddress);
+
+                uint256 totalBurned = token.burnAllTokens(invoice.investors);
+
+                if (totalBurned != token.totalSupply()) {
+                    revert Main__ErrorInBurningTokens();
+                }
+            }
+        }
+
+        emit AllTokensBurned(inovideId, invoice.investors);
     }
 
     function _updateNextDistributionPointer() internal {
@@ -469,9 +492,28 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
         return token.getExactCost(1e18);
     }
 
-    function getPiceOfTokens(uint256 _invoiceId, uint256 _amount) external view returns (uint256) {
+    function getTokenDetails(uint256 _invoiceId)
+        external
+        view
+        returns (
+            address tokenAddress,
+            string memory name,
+            string memory symbol,
+            uint256 totalSupply,
+            address supplier,
+            uint256 remainingCapacity
+        )
+    {
         InvoiceToken token = InvoiceToken(invoiceToken[_invoiceId]);
-        return token.getExactCost(_amount);
+
+        return (
+            invoiceToken[_invoiceId],
+            token.name(),
+            token.symbol(),
+            token.totalSupply(),
+            token.getSupplier(),
+            token.remainingCapacity()
+        );
     }
 
     function getUserRole(address _user) external view returns (UserRole) {
@@ -482,7 +524,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
         return invoiceToken[_invoiceId];
     }
 
-    function getInoviceDetails(uint256 _invoiceId)
+    function getInvoiceDetails(uint256 _invoiceId)
         external
         view
         returns (

@@ -39,12 +39,17 @@ contract InvoiceToken is ERC20, ReentrancyGuard {
         uint256 _invoiceAmountUSD,
         address _supplierAddress,
         address _mainContractAddress
-    ) ERC20(_name, _symbol) {
+    ) ERC20(_name, _symbol) ValidAddress(_supplierAddress) ValidAddress(_mainContractAddress) {
         priceFeed = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);
         supplier = _supplierAddress;
         mainContract = _mainContractAddress;
 
         maxSupply = _invoiceAmountUSD - (_invoiceAmountUSD * DISCOUNT_RATE / 100);
+    }
+
+    modifier onlyMainContract() {
+        if (msg.sender != mainContract) revert InvoiceToken__OwnerIsMainContract();
+        _;
     }
 
     function getETHPrice() public view returns (uint256) {
@@ -63,9 +68,9 @@ contract InvoiceToken is ERC20, ReentrancyGuard {
         nonReentrant
         moreThanZero(_amount)
         ValidAddress(_investor)
+        onlyMainContract
         returns (bool)
     {
-        if (msg.sender != mainContract) revert InvoiceToken__OwnerIsMainContract();
         if (totalSupply() + _amount > maxSupply) revert InvoiceToken__TokensExceedsMaxSupply();
 
         uint256 cost = getExactCost(_amount);
@@ -85,11 +90,35 @@ contract InvoiceToken is ERC20, ReentrancyGuard {
         return true;
     }
 
+    function burnAllTokens(address[] calldata _holders) external onlyMainContract returns (uint256) {
+        uint256 holdersLength = _holders.length;
+        uint256 totalBurned = 0;
+
+        for (uint256 i = 0; i < holdersLength;) {
+            address holder = _holders[i];
+            uint256 balance = balanceOf(holder);
+
+            if (balance > 0) {
+                _burn(holder, balance);
+                totalBurned += balance;
+            }
+
+            unchecked {
+                i++;
+            }
+        }
+        return totalBurned;
+    }
+
     function remainingCapacity() external view returns (uint256) {
         return maxSupply - totalSupply();
     }
 
     function getOriginalInvoiceAmount() external view returns (uint256) {
         return (maxSupply * 100) / (100 - DISCOUNT_RATE);
+    }
+
+    function getSupplier() external view returns (address) {
+        return supplier;
     }
 }
