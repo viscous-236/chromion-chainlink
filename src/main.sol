@@ -1,7 +1,6 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_3_0/FunctionsClient.sol";
@@ -33,6 +32,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     error Main__PaymentDistributionFailed();
     error Main__OnlyAuthorizedUpkeepers();
     error Main__OnlyOwner();
+    error Main__ErrorInBurningTokens();
 
     uint64 private s_subscriptionId;
     bytes32 private s_donId;
@@ -101,9 +101,11 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     event PaymentReceived(uint256 indexed invoiceId, address indexed buyer, uint256 amount);
     event InvoicePaid(uint256 indexed invoiceId, uint256 amount);
     event PaymentDistributed(uint256 indexed invoiceId, address indexed receiver, uint256 amount);
+    event PaymentToSupplier(uint256 indexed invoiceId, address indexed supplier, uint256 amount);
     event InvoiceTokenCreated(uint256 indexed invoiceId, address indexed tokenAddress);
     event UpkeeperAuthorized(address indexed upkeeper);
     event UpkeeperRevoked(address indexed upkeeper);
+    event AllTokensBurned(uint256 indexed invoiceId, address[] investors);
 
     modifier MoreThanZero(uint256 _number) {
         if (_number <= 0) {
@@ -265,6 +267,9 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
 
         InvoiceToken token = InvoiceToken(invoiceToken[_id]);
         uint256 totalDebtAmountInDollars = _getTotalDebtAmount(_id);
+        if (totalDebtAmountInDollars >= 2 * invoices[_id].amount) {
+            totalDebtAmountInDollars = 2 * invoices[_id].amount;
+        }
         uint256 totalDebtAmount = token.getExactCost(totalDebtAmountInDollars);
 
         if (msg.value < totalDebtAmount) {
@@ -323,6 +328,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
             uint256 distributionId = distributionIds[i];
             if (!pendingDistributions[distributionId].processed) {
                 _processPaymentDistribution(distributionId);
+                _burnToken(distributionId);
 
                 if (distributionId == nextDistributionToProcess) {
                     _updateNextDistributionPointer();
@@ -346,7 +352,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
 
         if (invoice.investors.length == 0) {
             _sendPayment(invoice.supplier, totalPaymentInEth);
-            emit PaymentDistributed(invoiceId, invoice.supplier, totalPaymentInEth);
+            emit PaymentToSupplier(invoiceId, invoice.supplier, totalPaymentInEth);
         } else {
             uint256 totalInvestment = invoice.totalInvestment;
             uint256 supplierPaymentInEth = 0;
@@ -371,12 +377,32 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
             supplierPaymentInEth = totalPaymentInEth - totalInvestorPaymentInEth;
             if (supplierPaymentInEth > 0) {
                 _sendPayment(invoice.supplier, supplierPaymentInEth);
-                emit PaymentDistributed(invoiceId, invoice.supplier, supplierPaymentInEth);
+                emit PaymentToSupplier(invoiceId, invoice.supplier, supplierPaymentInEth);
             }
         }
 
         distribution.processed = true;
         totalPendingDistributions--;
+    }
+
+    function _burnToken(uint256 distributionId) internal {
+        uint256 inovideId = pendingDistributions[distributionId].invoiceId;
+        Invoice storage invoice = invoices[inovideId];
+
+        if (invoice.investors.length > 0) {
+            address tokenAddress = invoiceToken[inovideId];
+            if (tokenAddress != address(0)) {
+                InvoiceToken token = InvoiceToken(tokenAddress);
+
+                uint256 totalBurned = token.burnAllTokens(invoice.investors);
+
+                if (totalBurned != token.totalSupply()) {
+                    revert Main__ErrorInBurningTokens();
+                }
+            }
+        }
+
+        emit AllTokensBurned(inovideId, invoice.investors);
     }
 
     function _updateNextDistributionPointer() internal {
@@ -410,6 +436,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     function _getTotalDebtAmount(uint256 _id) internal view returns (uint256) {
         uint256 debtAmount = invoices[_id].amount;
         uint256 graceDueTime = invoices[_id].dueDate + GRACEPERIOD;
+
         if (block.timestamp > graceDueTime) {
             uint256 overdueTime = block.timestamp - graceDueTime;
             uint256 penalty = (debtAmount * 4 / 100) * (overdueTime / 1 days);
@@ -458,5 +485,71 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
 
     function isAuthorizedUpkeeper(address _upkeeper) external view returns (bool) {
         return authorizedUpkeepers[_upkeeper];
+    }
+
+    function getPriceOfTokenInEth(uint256 _invoiceId) external view returns (uint256) {
+        InvoiceToken token = InvoiceToken(invoiceToken[_invoiceId]);
+        return token.getExactCost(1e18);
+    }
+
+    function getTokenDetails(uint256 _invoiceId)
+        external
+        view
+        returns (
+            address tokenAddress,
+            string memory name,
+            string memory symbol,
+            uint256 totalSupply,
+            address supplier,
+            uint256 remainingCapacity
+        )
+    {
+        InvoiceToken token = InvoiceToken(invoiceToken[_invoiceId]);
+
+        return (
+            invoiceToken[_invoiceId],
+            token.name(),
+            token.symbol(),
+            token.totalSupply(),
+            token.getSupplier(),
+            token.remainingCapacity()
+        );
+    }
+
+    function getUserRole(address _user) external view returns (UserRole) {
+        return userRole[_user];
+    }
+
+    function getInvoiceTokenAddress(uint256 _invoiceId) external view returns (address) {
+        return invoiceToken[_invoiceId];
+    }
+
+    function getInvoiceDetails(uint256 _invoiceId)
+        external
+        view
+        returns (
+            uint256 id,
+            address supplier,
+            address buyer,
+            uint256 amount,
+            address[] memory investors,
+            InvoiceStatus status,
+            uint256 dueDate,
+            uint256 totalInvestment,
+            bool isPaid
+        )
+    {
+        Invoice storage invoice = invoices[_invoiceId];
+        return (
+            invoice.id,
+            invoice.supplier,
+            invoice.buyer,
+            invoice.amount,
+            invoice.investors,
+            invoice.status,
+            invoice.dueDate,
+            invoice.totalInvestment,
+            invoice.isPaid
+        );
     }
 }
