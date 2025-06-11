@@ -480,6 +480,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     function getBuyerInvoiceIds(address _buyer) external view returns (uint256[] memory) {
         return buyerInvoices[_buyer];
     }
+    
 
     function getSupplierInvoices(address _supplier) external view returns (address[] memory) {
         return supplierInvoices[_supplier];
