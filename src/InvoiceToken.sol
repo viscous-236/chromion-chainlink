@@ -121,4 +121,8 @@ contract InvoiceToken is ERC20, ReentrancyGuard {
     function getSupplier() external view returns (address) {
         return supplier;
     }
+
+    function getMaxSupply() external view returns (uint256) {
+        return maxSupply;
+    }
 }

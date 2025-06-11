@@ -91,7 +91,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     mapping(address => bool) public hasChosenRole;
     mapping(bytes32 => uint256) public pendingRequests;
     mapping(address buyer => uint256[] invoiceIds) public buyerInvoices;
-    mapping(address supplier => address[] invoices) public supplierInvoices;
+    mapping(address supplier => uint256[] invoicesIds) public supplierInvoices;
     mapping(uint256 id => PaymentDistribution distribution) public pendingDistributions;
 
     event ContractFunded(address indexed sender, uint256 amount);
@@ -480,9 +480,8 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     function getBuyerInvoiceIds(address _buyer) external view returns (uint256[] memory) {
         return buyerInvoices[_buyer];
     }
-    
 
-    function getSupplierInvoices(address _supplier) external view returns (address[] memory) {
+    function getSupplierInvoices(address _supplier) external view returns (uint256[] memory) {
         return supplierInvoices[_supplier];
     }
 
@@ -568,5 +567,13 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
         );
     }
 
-    function get
+    function getTotalSupply(uint256 _invoiceId) external view returns (uint256) {
+        InvoiceToken token = InvoiceToken(invoiceToken[_invoiceId]);
+        return token.totalSupply();
+    }
+
+    function getMaxSupply(uint256 _invoiceId) external view returns (uint256) {
+        InvoiceToken token = InvoiceToken(invoiceToken[_invoiceId]);
+        return token.maxSupply();
+    }
 }
