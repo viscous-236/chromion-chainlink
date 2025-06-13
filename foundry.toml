@@ -8,3 +8,19 @@ remappings = [
     "@chainlink-brownie-contracts=lib/chainlink-brownie-contracts/contracts",
     "@chainlink/contracts=lib/chainlink/contracts",
 ]
+
+# Enable optimization
+optimizer = true
+optimizer_runs = 200
+
+# Gas settings
+gas_limit = 9000000
+gas_price = 20000000000
+
+# RPC endpoints
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
+
+# Etherscan for verification
+[etherscan]
+sepolia = { key = "${ETHERSCAN_API_KEY}" }
