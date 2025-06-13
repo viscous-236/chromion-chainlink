@@ -204,7 +204,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
 
         invoices[invoiceId].status = InvoiceStatus.VerificationInProgress;
         string memory source = "const invoiceId = args[0];" "const amount = args[1];" ""
-            "const apiResponse = await Functions.makeHttpRequest({" "url: //my api ," "method:'POST'," "headers:{"
+            "const apiResponse = await Functions.makeHttpRequest({" "url: https://project-server-seven-ecru.vercel.app ," "method:'POST'," "headers:{"
             "'Authorization': `Bearer ${secrets.apiKey}`," "'Content-Type': 'application/json'" "}," "  data: {"
             "  invoiceId: invoiceId," "  amount: amount" "}" "});" "" "if(apiResponse.error){"
             " throw Error('ERP API failed');" "}" "" "const isValid = apiResponse.data.isValid;"
