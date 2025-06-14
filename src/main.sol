@@ -203,13 +203,14 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
         if (invoices[invoiceId].status != InvoiceStatus.Pending) revert Main__InvoiceStatusMustBePending();
 
         invoices[invoiceId].status = InvoiceStatus.VerificationInProgress;
-        string memory source = "const invoiceId = args[0];" "const amount = Number(args[1]) / 100;" ""
+
+        // Fixed JavaScript source string with proper concatenation and syntax
+        string memory source = "const invoiceId = args[0];" "const amount = Number(args[1]) / 100;"
             "const apiResponse = await Functions.makeHttpRequest({"
-            "url: https://project-server-seven-ecru.vercel.app ," "method:'POST'," "headers:{"
-            "'Authorization': `Bearer ${secrets.apiKey}`," "'Content-Type': 'application/json'" "}," "  data: {"
-            "  invoiceId: invoiceId," "  amount: amount" "}" "});" "" "if(apiResponse.error){"
-            " throw Error('ERP API failed');" "}" "" "const isValid = apiResponse.data.isValid;"
-            "return Functions.encodeUint256(isValid? 1: 0);";
+            "url: 'https://project-server-seven-ecru.vercel.app'," "method: 'POST'," "headers: {"
+            "'Authorization': `Bearer ${secrets.apiKey}`," "'Content-Type': 'application/json'" "}," "data: {"
+            "invoiceId: invoiceId," "amount: amount" "}" "});" "if(apiResponse.error){" "throw Error('ERP API failed');"
+            "}" "const isValid = apiResponse.data.isValid;" "return Functions.encodeUint256(isValid ? 1 : 0);";
 
         FunctionsRequest.Request memory req;
         req.initializeRequestForInlineJavaScript(source);
