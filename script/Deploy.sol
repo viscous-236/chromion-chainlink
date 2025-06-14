@@ -7,8 +7,6 @@ import "../src/InvoiceToken.sol";
 
 contract DeployScript is Script {
     function run() external {
-        // Load environment variables
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         
         // Network-specific configurations
         address router;
@@ -36,7 +34,7 @@ contract DeployScript is Script {
         // Your Chainlink Functions subscription ID
         uint64 subscriptionId = 4984;
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         
         // Deploy the Main contract
         Main mainContract = new Main(router, subscriptionId, donId);
