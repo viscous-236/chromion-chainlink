@@ -43,7 +43,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     uint256 private constant GRACEPERIOD = 2 days;
     uint256 private constant MAX_PENDING_DISTRIBUTIONS = 10;
     uint256 public constant ONE_DOLLAR = 1e18;
-    uint256 public invoiceCounter;
+    uint256[] public arrayOfInoviceIds;
 
     address public immutable owner;
     mapping(address => bool) public authorizedUpkeepers;
@@ -84,7 +84,6 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     mapping(uint256 id => mapping(address investor => uint256 amountOfTokensPurchased)) public
         amountOfTokensPurchasedByInvestor;
     mapping(uint256 id => Invoice invoice) public invoices;
-    mapping(uint256 index => Invoice invoice) public invoiceList;
     mapping(uint256 id => bool) public IdExists;
     mapping(address user => UserRole role) public userRole;
     mapping(uint256 id => address token) public invoiceToken;
@@ -192,8 +191,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
         });
         buyerInvoices[_buyer].push(_id);
         supplierInvoices[msg.sender].push(_id);
-        invoiceList[invoiceCounter] = invoices[_id];
-        invoiceCounter++;
+        arrayOfInoviceIds.push(_id);
 
         emit InvoiceCreated(_id, msg.sender, _buyer, _amount, _dueDate);
     } 
@@ -548,8 +546,8 @@ function _fulfillRequest(bytes32 requestId, bytes memory response, bytes memory 
         return invoices[_invoiceId];
     }
 
-    function getInvoiceCount() external view returns (uint256) {
-        return invoiceCounter;
+    function getAllInvoiceIds() external view returns (uint256[] memory) {
+        return arrayOfInoviceIds;
     }
 
     function getInvoiceStatus(uint256 _invoiceId) external view returns (InvoiceStatus) {
