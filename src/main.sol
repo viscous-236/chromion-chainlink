@@ -108,6 +108,9 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
     event UpkeeperAuthorized(address indexed upkeeper);
     event UpkeeperRevoked(address indexed upkeeper);
     event AllTokensBurned(uint256 indexed invoiceId, address[] investors);
+    event InvoiceVerificationError(uint256 indexed invoiceId, string error);
+    event UnknownRequestReceived(bytes32 indexed requestId);
+    event InvoiceStateError(uint256 indexed invoiceId, uint8 currentStatus);
 
     modifier MoreThanZero(uint256 _number) {
         if (_number <= 0) {
@@ -194,115 +197,89 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatible {
         arrayOfInoviceIds.push(_id);
 
         emit InvoiceCreated(_id, msg.sender, _buyer, _amount, _dueDate);
-    } 
-
-function verifyInvoice(uint256 invoiceId) external {
-    if (userRole[msg.sender] != UserRole.Supplier) revert Main__CallerMustBeSupplier();
-    if (invoices[invoiceId].status != InvoiceStatus.Pending) revert Main__InvoiceStatusMustBePending();
-
-    invoices[invoiceId].status = InvoiceStatus.VerificationInProgress;
-
-    string memory source = 
-    "try {"
-        "const invoiceId = args[0];"
-        "console.log('=== CHAINLINK VERIFICATION START ===');"
-        "console.log('Verifying invoice:', invoiceId);"
-        
-        "const apiResponse = await Functions.makeHttpRequest({"
-            "url: 'https://real-tau-nine.vercel.app/api/verify-invoice',"
-            "method: 'POST',"
-            "headers: {'Content-Type': 'application/json'},"
-            "data: JSON.stringify({invoiceId: invoiceId}),"
-            "timeout: 9000"
-        "});"
-        
-        "console.log('Raw API Response:', apiResponse);"
-        "console.log('API Response status:', apiResponse.status);"
-        "console.log('API Response data type:', typeof apiResponse.data);"
-        "console.log('API Response data:', apiResponse.data);"
-        
-        "if (apiResponse.error) {"
-            "console.error('API Error:', apiResponse.error);"
-            "throw new Error('API Error: ' + JSON.stringify(apiResponse.error));"
-        "}"
-        
-        "if (apiResponse.status !== 200) {"
-            "throw new Error('API returned status: ' + apiResponse.status);"
-        "}"
-        
-        "if (!apiResponse.data) {"
-            "throw new Error('No data in API response');"
-        "}"
-        
-        "let responseData;"
-        "if (typeof apiResponse.data === 'string') {"
-            "console.log('Parsing string response...');"
-            "responseData = JSON.parse(apiResponse.data);"
-        "} else if (typeof apiResponse.data === 'object') {"
-            "console.log('Using object response directly...');"
-            "responseData = apiResponse.data;"
-        "} else {"
-            "throw new Error('Unexpected response data type: ' + typeof apiResponse.data);"
-        "}"
-        
-        "console.log('Parsed response data:', responseData);"
-        "console.log('IsValid field:', responseData.isValid);"
-        "console.log('IsValid type:', typeof responseData.isValid);"
-        
-        "if (!responseData.hasOwnProperty('isValid')) {"
-            "throw new Error('Response missing isValid field');"
-        "}"
-        
-        "const isValid = responseData.isValid === true;"
-        "console.log('Final isValid result:', isValid);"
-        
-        "const result = isValid ? '1' : '0';"
-        "console.log('Returning result:', result);"
-        "console.log('=== CHAINLINK VERIFICATION END ===');"
-        "return result;"
-        
-    "} catch (error) {"
-        "console.error('=== CHAINLINK ERROR ===');"
-        "console.error('Error name:', error.name);"
-        "console.error('Error message:', error.message);"
-        "console.error('Error stack:', error.stack);"
-        "throw new Error('Verification failed: ' + error.message);"
-    "}";
-
-    FunctionsRequest.Request memory req;
-    req.initializeRequestForInlineJavaScript(source);
-
-    string[] memory args = new string[](1);
-    args[0] = _uint2str(invoiceId);
-    req.setArgs(args);
-    bytes32 requestId = _sendRequest(req.encodeCBOR(), s_subscriptionId, s_gasLimit, s_donId);
-
-    pendingRequests[requestId] = invoiceId;
-    emit InvoiceVerificationRequested(invoiceId, requestId);
-}
-
-function _fulfillRequest(bytes32 requestId, bytes memory response, bytes memory error) internal override {
-    uint256 invoiceId = pendingRequests[requestId];
-    if (invoices[invoiceId].status != InvoiceStatus.VerificationInProgress) {
-        revert Main__InvoiceStatusMustBeVerificationInProgress();
     }
 
-    if (error.length > 0) {
+    function verifyInvoice(uint256 invoiceId) external {
+        if (userRole[msg.sender] != UserRole.Supplier) revert Main__CallerMustBeSupplier();
+        if (invoices[invoiceId].status != InvoiceStatus.Pending) revert Main__InvoiceStatusMustBePending();
+
+        invoices[invoiceId].status = InvoiceStatus.VerificationInProgress;
+
+        // Fixed JavaScript source code with proper response handling
+        string memory source = "const invoiceId = args[0];" "console.log('Verifying invoice:', invoiceId);"
+            "const response = await Functions.makeHttpRequest({"
+            "url: 'https://real-tau-nine.vercel.app/api/verify-invoice'," "method: 'POST',"
+            "headers: {'Content-Type': 'application/json'}," "data: JSON.stringify({invoiceId: invoiceId}),"
+            "timeout: 9000" "});" "console.log('Full API Response:', JSON.stringify(response, null, 2));"
+            "if (response.error) {" "console.log('Request error:', response.error);"
+            "throw new Error('Request failed: ' + response.error);" "}"
+            "if (!response.status || response.status !== 200) {" "console.log('HTTP Status:', response.status);"
+            "throw new Error('API returned status: ' + response.status);" "}" "const data = response.data;"
+            "console.log('Response data:', JSON.stringify(data, null, 2));"
+            "if (!data || typeof data.isValid === 'undefined') {" "console.log('Invalid response structure:', data);"
+            "throw new Error('Invalid response structure from API');" "}" "const isValid = data.isValid === true;"
+            "console.log('Final isValid result:', isValid);" "return isValid ? '1' : '0';";
+
+        FunctionsRequest.Request memory req;
+        req.initializeRequestForInlineJavaScript(source);
+
+        string[] memory args = new string[](1);
+        args[0] = _uint2str(invoiceId);
+        req.setArgs(args);
+
+        bytes32 requestId = _sendRequest(req.encodeCBOR(), s_subscriptionId, s_gasLimit, s_donId);
+
+        pendingRequests[requestId] = invoiceId;
+        emit InvoiceVerificationRequested(invoiceId, requestId);
+    }
+
+    function _fulfillRequest(bytes32 requestId, bytes memory response, bytes memory error) internal override {
+        uint256 invoiceId = pendingRequests[requestId];
+
+        // Validate request exists
+        if (invoiceId == 0) {
+            emit UnknownRequestReceived(requestId);
+            return;
+        }
+
+        // Validate invoice state - use graceful handling instead of revert
+        if (invoices[invoiceId].status != InvoiceStatus.VerificationInProgress) {
+            emit InvoiceStateError(invoiceId, uint8(invoices[invoiceId].status));
+            delete pendingRequests[requestId];
+            return;
+        }
+
+        // Handle Chainlink errors
+        if (error.length > 0) {
+            _handleVerificationError(invoiceId, string(error));
+            delete pendingRequests[requestId];
+            return;
+        }
+
+        // Handle successful response
+        if (response.length > 0) {
+            _handleVerificationSuccess(invoiceId, response);
+        } else {
+            _handleVerificationError(invoiceId, "Empty response received");
+        }
+
+        delete pendingRequests[requestId];
+    }
+
+    function _handleVerificationError(uint256 invoiceId, string memory errorMsg) internal {
+        emit InvoiceVerificationError(invoiceId, errorMsg);
         invoices[invoiceId].status = InvoiceStatus.Rejected;
         emit InvoiceVerified(invoiceId, false);
-    } else {
-        uint256 result = abi.decode(response, (uint256));
-        if (result == 1) {
-            invoices[invoiceId].status = InvoiceStatus.Approved;
-            _generateErc20(invoices[invoiceId].id, invoices[invoiceId].amount);
-            emit InvoiceVerified(invoiceId, true);
-        } else {
-            invoices[invoiceId].status = InvoiceStatus.Rejected;
-            emit InvoiceVerified(invoiceId, false);
-        }
     }
-    delete pendingRequests[requestId];
-}
+
+    function _handleVerificationSuccess(uint256 invoiceId, bytes memory response) internal {
+        // Safe string conversion and comparison
+        string memory responseStr = string(response);
+        bool isValid = keccak256(bytes(responseStr)) == keccak256(bytes("1"));
+
+        invoices[invoiceId].status = isValid ? InvoiceStatus.Approved : InvoiceStatus.Rejected;
+        emit InvoiceVerified(invoiceId, isValid);
+    }
 
     function buyTokens(uint256 _id, uint256 _amount) external payable MoreThanZero(_amount) {
         if (userRole[msg.sender] != UserRole.Investor) revert Main__CallerMustBeInvestor();
