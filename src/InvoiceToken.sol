@@ -44,7 +44,7 @@ contract InvoiceToken is ERC20, ReentrancyGuard {
         supplier = _supplierAddress;
         mainContract = _mainContractAddress;
 
-        maxSupply = _invoiceAmountUSD - (_invoiceAmountUSD * DISCOUNT_RATE / 100);
+      maxSupply = _invoiceAmountUSD - (_invoiceAmountUSD * DISCOUNT_RATE / 100);
     }
 
     modifier onlyMainContract() {
@@ -62,7 +62,7 @@ contract InvoiceToken is ERC20, ReentrancyGuard {
         return (_amount * 1e18) / getETHPrice();
     }
 
-    function buyTokens(uint256 _amount, address _investor)
+    function buyTokens(uint256 _amount, address _investor )
         external
         payable
         nonReentrant
@@ -73,20 +73,20 @@ contract InvoiceToken is ERC20, ReentrancyGuard {
     {
         if (totalSupply() + _amount > maxSupply) revert InvoiceToken__TokensExceedsMaxSupply();
 
-        uint256 cost = getExactCost(_amount);
-        if (msg.value < cost) revert InvoiceToken__InsufficientBalance(msg.value, cost);
+        uint256 cost = msg.value;
+        //if (msg.value < cost) revert InvoiceToken__InsufficientBalance(msg.value, cost);
 
         _mint(_investor, _amount);
 
-        (bool success,) = payable(supplier).call{value: cost}("");
+        (bool success,) = payable(supplier).call{value: msg.value}("");
         if (!success) revert InvoiceToken__TransferFailed();
 
         totalPaidToSupplier += cost;
 
-        if (msg.value > cost) {
-            (bool refundSuccess,) = payable(_investor).call{value: msg.value - cost}("");
-            if (!refundSuccess) revert InvoiceToken__RefundFailed();
-        }
+        //if (msg.value > cost) {
+           // (bool refundSuccess,) = payable(_investor).call{value: msg.value - cost}("");
+           // if (!refundSuccess) revert InvoiceToken__RefundFailed();
+       // }
         return true;
     }
 

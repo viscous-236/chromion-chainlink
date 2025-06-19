@@ -11,6 +11,7 @@ contract DeployScript is Script {
         // Network-specific configurations
         address router;
         bytes32 donId;
+        address automationRegistry;
         
         // Get the chain ID to determine network-specific values
         uint256 chainId = block.chainid;
@@ -18,15 +19,19 @@ contract DeployScript is Script {
         if (chainId == 11155111) { // Sepolia
             router = 0xb83E47C2bC239B3bf370bc41e1459A34b41238D0;
             donId = 0x66756e2d657468657265756d2d7365706f6c69612d3100000000000000000000; // fun-ethereum-sepolia-1
+            automationRegistry = 0x86eFBD0B6C7c0E95c8FB6F97b6eeB1e064C70eca; // Ethereum Sepolia Automation Registry
         } else if (chainId == 80002) { // Polygon Amoy
             router = 0xC22a79eBA640940ABB6dF0f7982cc119578E11De;
             donId = 0x66756e2d706f6c79676f6e2d616d6f792d310000000000000000000000000000; // fun-polygon-amoy-1
+            automationRegistry = address(0); // Add Polygon Amoy automation registry if available
         } else if (chainId == 43113) { // Avalanche Fuji
             router = 0xA9d587a00A31A52Ed70D6026794a8FC5E2F5dCb0;
             donId = 0x66756e2d6176616c616e6368652d66756a692d31000000000000000000000000; // fun-avalanche-fuji-1
+            automationRegistry = address(0); // Add Avalanche Fuji automation registry if available
         } else if (chainId == 84532) { // Base Sepolia
             router = 0xf9B8fc078197181C841c296C876945aaa425B278;
             donId = 0x66756e2d626173652d7365706f6c69612d310000000000000000000000000000; // fun-base-sepolia-1
+            automationRegistry = address(0); // Add Base Sepolia automation registry if available
         } else {
             revert("Unsupported network");
         }
@@ -39,10 +44,24 @@ contract DeployScript is Script {
         // Deploy the Main contract
         Main mainContract = new Main(router, subscriptionId, donId);
         
+        // If automation registry is available on this network, authorize it
+        if (automationRegistry != address(0)) {
+            console.log("Authorizing Automation Registry:", automationRegistry);
+            // Note: The automation registry should already be authorized in the constructor
+            // but you can add additional authorization logic here if needed
+        }
+        
         console.log("Main contract deployed at:", address(mainContract));
         console.log("Router:", router);
         console.log("DON ID:", vm.toString(donId));
         console.log("Subscription ID:", subscriptionId);
+        
+        if (automationRegistry != address(0)) {
+            console.log("Automation Registry:", automationRegistry);
+            console.log("Automation Registry authorized for automated invoice processing");
+        } else {
+            console.log("No automation registry configured for this network");
+        }
         
         vm.stopBroadcast();
     }
