@@ -308,6 +308,18 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatibleInterface
         emit SuccessfulTokenPurchase(_id, msg.sender, _amount);
     }
 
+     function _getTotalDebtAmount(uint256 _id) public view returns (uint256) {
+        uint256 debtAmount = invoices[_id].amount;
+        uint256 graceDueTime = invoices[_id].dueDate + GRACEPERIOD;
+
+        if (block.timestamp > graceDueTime) {
+            uint256 overdueTime = block.timestamp - graceDueTime;
+            uint256 penalty = (debtAmount * 4 / 100) * (overdueTime / 1 days);
+            return debtAmount + penalty;
+        }
+        return debtAmount;
+    }
+
     function buyerPayment(uint256 _id) external payable {
         if (userRole[msg.sender] != UserRole.Buyer) revert Main__CallerMustBeBuyer();
         if (IdExists[_id] == false) revert Main__InvoiceNotExist();
@@ -478,17 +490,7 @@ contract Main is FunctionsClient, ReentrancyGuard, AutomationCompatibleInterface
         emit InvoiceTokenCreated(_id, address(newInvoiceToken));
     }
 
-    function _getTotalDebtAmount(uint256 _id) internal view returns (uint256) {
-        uint256 debtAmount = invoices[_id].amount;
-        uint256 graceDueTime = invoices[_id].dueDate + GRACEPERIOD;
-
-        if (block.timestamp > graceDueTime) {
-            uint256 overdueTime = block.timestamp - graceDueTime;
-            uint256 penalty = (debtAmount * 4 / 100) * (overdueTime / 1 days);
-            return debtAmount + penalty;
-        }
-        return debtAmount;
-    }
+   
 
     function _uint2str(uint256 _i) internal pure returns (string memory) {
         if (_i == 0) {
